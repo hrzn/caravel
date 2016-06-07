@@ -1154,12 +1154,18 @@ class DruidDatasource(Model, AuditMixinNullable, Queryable):
 
         qry = dict(
             datasource=self.datasource_name,
-            dimensions=groupby,
+            # dimensions=groupby,
             aggregations=aggregations,
             granularity=granularity,
             post_aggregations=post_aggs,
             intervals=from_dttm.isoformat() + '/' + to_dttm.isoformat(),
         )
+
+        if len(groupby) == 1:
+            qry['dimension'] = groupby[0]
+        elif len(groupby) > 1:
+            qry['dimensions'] = groupby
+
         filters = None
         for col, op, eq in filter:
             cond = None
@@ -1194,7 +1200,7 @@ class DruidDatasource(Model, AuditMixinNullable, Queryable):
 
         client = self.cluster.get_pydruid_client()
         orig_filters = filters
-        if timeseries_limit and is_timeseries:
+        if timeseries_limit and is_timeseries and len(groupby) > 1:
             # Limit on the number of timeseries, doing a two-phases query
             pre_qry = deepcopy(qry)
             pre_qry['granularity'] = "all"
@@ -1238,7 +1244,8 @@ class DruidDatasource(Model, AuditMixinNullable, Queryable):
                             ff,
                             orig_filters])
                 qry['limit_spec'] = None
-        if row_limit:
+            
+        if row_limit and len(groupby) > 1:
             qry['limit_spec'] = {
                 "type": "default",
                 "limit": row_limit,
@@ -1247,7 +1254,16 @@ class DruidDatasource(Model, AuditMixinNullable, Queryable):
                     "direction": "descending",
                 }],
             }
-        client.groupby(**qry)
+
+        if len(groupby) == 0:
+            client.timeseries(**qry)
+        elif len(groupby) == 1:
+            qry['metric'] = all_metrics[0]
+            qry['threshold'] = timeseries_limit
+            client.topn(**qry)
+        elif len(groupby) > 1:
+            client.groupby(**qry)
+
         query_str += json.dumps(
             client.query_builder.last_query.query_dict, indent=2)
         df = client.export_pandas()
