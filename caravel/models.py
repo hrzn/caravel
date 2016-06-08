@@ -1160,6 +1160,11 @@ class DruidDatasource(Model, AuditMixinNullable, Queryable):
             intervals=from_dttm.isoformat() + '/' + to_dttm.isoformat(),
         )
 
+        if len(groupby) == 1:
+            qry['dimension'] = groupby[0]
+        elif len(groupby) > 1:
+            qry['dimensions'] = groupby
+
         filters = None
         for col, op, eq in filter:
             cond = None
@@ -1252,12 +1257,10 @@ class DruidDatasource(Model, AuditMixinNullable, Queryable):
         if len(groupby) == 0:
             client.timeseries(**qry)
         elif len(groupby) == 1:
-            qry['dimension'] = groupby[0]
             qry['metric'] = all_metrics[0]
             qry['threshold'] = timeseries_limit
             client.topn(**qry)
         elif len(groupby) > 1:
-            qry['dimensions'] = groupby
             client.groupby(**qry)
 
         query_str += json.dumps(
